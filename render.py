@@ -6,11 +6,14 @@ downscaled with Lanczos resampling to 1024x1024, saved as a JPEG at quality
 93 with 4:4:4 chroma subsampling. Rendering is fully deterministic: the
 same story data and the same fonts always produce byte-identical output.
 
-Design: a newspaper front page. Colour appears only in the masthead band
-at the top; the body of the page is strictly black, white and grey. The
-lead story runs full width under the masthead, followed by a grid of the
-remaining 24 stories in four columns and six rows. Every story prints its
-headline, a short summary and the names of its sources beneath it.
+Design: a newspaper front page. The masthead band at the top is crimson
+and gold; in the body, every headline runs on a TV-style breaking-news
+ribbon: a slanted black bar with the headline in white bold italic and a
+thin orange strip beneath it, while summaries and source lines stay
+black and grey on the paper. The lead story runs full width under the
+masthead, followed by a grid of the remaining 24 stories in four columns
+and six rows. Every story prints its headline, a short summary and the
+names of its sources beneath it.
 """
 
 import os
@@ -34,12 +37,16 @@ HAIR = (178, 178, 178)         # hairline column rules
 BAND = (122, 18, 32)           # masthead crimson (colour lives here only)
 BAND_GOLD = (242, 193, 78)     # masthead gold rule and date
 BAND_WHITE = (255, 255, 255)   # masthead text
+BLOCK = (13, 13, 13)           # headline ribbon: black slanted bar
+HEADLINE_ON_BLOCK = (255, 255, 255)  # headline text on the ribbon: white
+RIBBON_ORANGE = (255, 122, 0)  # ribbon strip and tab: vivid orange
 
 # ---------------------------------------------------------------- fonts
 SERIF_BOLD = "/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf"
 SERIF_ITALIC = "/usr/share/fonts/truetype/liberation/LiberationSerif-Italic.ttf"
 SANS = "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
 SANS_BOLD = "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
+SANS_BOLD_ITALIC = "/usr/share/fonts/truetype/liberation/LiberationSans-BoldItalic.ttf"
 
 
 def font(path, size):
@@ -74,15 +81,26 @@ def centered(draw, text, y, fnt, fill):
     draw.text(((W - w) / 2, y), text, font=fnt, fill=fill)
 
 
+def draw_ribbon(draw, x, y, w, h, slant=12):
+    """TV breaking-news ribbon: a slanted black bar with a thin orange
+    strip beneath it. Returns the y just below the strip."""
+    draw.polygon([(x + slant, y), (x + w, y),
+                  (x + w - slant, y + h), (x, y + h)], fill=BLOCK)
+    sy = y + h + 2
+    draw.polygon([(x + slant, sy), (x + w, sy),
+                  (x + w - slant, sy + 6), (x, sy + 6)], fill=RIBBON_ORANGE)
+    return sy + 6
+
+
 # ---------------------------------------------------------------- masthead
 def draw_masthead(draw):
-    band_h = 216
+    band_h = 204
     draw.rectangle([0, 0, W, band_h], fill=BAND)
-    centered(draw, "THE DAILY SUM", 26, font(SERIF_BOLD, 62), BAND_WHITE)
-    draw.rectangle([MARGIN, 108, W - MARGIN, 112], fill=BAND_GOLD)
-    centered(draw, "TUESDAY, 24 NOVEMBER 2026", 124,
+    centered(draw, "THE DAILY SUM", 20, font(SERIF_BOLD, 62), BAND_WHITE)
+    draw.rectangle([MARGIN, 98, W - MARGIN, 102], fill=BAND_GOLD)
+    centered(draw, "TUESDAY, 24 NOVEMBER 2026", 110,
              font(SANS_BOLD, 47), BAND_GOLD)
-    centered(draw, "All the world's news of one day, in one image", 178,
+    centered(draw, "All the world's news of one day, in one image", 162,
              font(SERIF_ITALIC, 27), BAND_WHITE)
     # heavy black rule closing the coloured strip
     draw.rectangle([0, band_h, W, band_h + 8], fill=RULE)
@@ -92,14 +110,23 @@ def draw_masthead(draw):
 # ---------------------------------------------------------------- lead
 def draw_lead(draw, y):
     draw.text((MARGIN, y), "THE LEAD", font=font(SANS_BOLD, 26), fill=GREY)
-    y += 40
-    hf = font(SERIF_BOLD, 63)
-    lines = wrap(draw, LEAD["headline"], hf, CONTENT_W)
-    y = draw_lines(draw, lines, MARGIN, y, hf, INK, 74)
-    y += 8
-    sf = font(SANS, 35)
+    y += 36
+    hf = font(SANS_BOLD_ITALIC, 56)
+    tab_w = 216
+    lines = wrap(draw, LEAD["headline"], hf, CONTENT_W - tab_w - 34)
+    bar_h = len(lines) * 68 + 14
+    bottom = draw_ribbon(draw, MARGIN, y, CONTENT_W, bar_h, slant=18)
+    draw.polygon([(MARGIN + 18, y), (MARGIN + tab_w, y),
+                  (MARGIN + tab_w - 18, y + bar_h), (MARGIN, y + bar_h)],
+                 fill=RIBBON_ORANGE)
+    draw.text((MARGIN + 28, y + bar_h // 2 - 19), "BREAKING",
+              font=font(SANS_BOLD_ITALIC, 31), fill=BLOCK)
+    draw_lines(draw, lines, MARGIN + tab_w + 18, y + 8, hf,
+               HEADLINE_ON_BLOCK, 68)
+    y = bottom + 10
+    sf = font(SANS, 34)
     lines = wrap(draw, LEAD["summary"], sf, CONTENT_W)
-    y = draw_lines(draw, lines, MARGIN, y, sf, INK, 45)
+    y = draw_lines(draw, lines, MARGIN, y, sf, INK, 44)
     y += 8
     draw.text((MARGIN, y), "Sources: " + LEAD["sources"],
               font=font(SERIF_ITALIC, 29), fill=GREY)
@@ -113,30 +140,32 @@ def draw_cell(draw, story, x, y, w, h):
     """Draw one story inside the cell box; shrink the summary font until
     headline + summary + source line all fit the cell height."""
     inner_w = w - 20
-    hf = font(SERIF_BOLD, 30)
-    h_lines = wrap(draw, story["headline"], hf, inner_w)
-    head_h = len(h_lines) * 35
+    hf = font(SANS_BOLD_ITALIC, 28)
+    h_lines = wrap(draw, story["headline"], hf, inner_w - 18)
+    head_h = len(h_lines) * 32
 
     src_f = font(SERIF_ITALIC, 20)
     src_lines = wrap(draw, "Sources: " + story["sources"], src_f, inner_w)
-    src_h = len(src_lines) * 24
+    src_h = len(src_lines) * 23
 
+    block_h = head_h + 4 + 8  # bar padding + orange strip beneath the bar
     body = None
-    for size, line_h in ((24, 29), (22, 27), (21, 25), (20, 24), (19, 23), (18, 22)):
+    for size, line_h in ((24, 29), (22, 27), (21, 25), (20, 24), (19, 23), (18, 22), (17, 21), (16, 20), (15, 19), (14, 18)):
         bf = font(SANS, size)
         s_lines = wrap(draw, story["summary"], bf, inner_w)
-        if head_h + 6 + len(s_lines) * line_h + 6 + src_h <= h:
+        if block_h + 6 + len(s_lines) * line_h + 6 + src_h <= h:
             body = (bf, s_lines, line_h)
             break
     if body is None:
         raise ValueError("story does not fit its cell: " + story["headline"])
     bf, s_lines, line_h = body
 
-    cy = draw_lines(draw, h_lines, x + 10, y + 4, hf, INK, 35)
-    cy += 6
+    draw_ribbon(draw, x, y, w, head_h + 4, slant=10)
+    cy = draw_lines(draw, h_lines, x + 14, y + 3, hf, HEADLINE_ON_BLOCK, 32)
+    cy = y + block_h + 5
     cy = draw_lines(draw, s_lines, x + 10, cy, bf, INK, line_h)
-    cy += 6
-    draw_lines(draw, src_lines, x + 10, cy, src_f, GREY, 24)
+    cy += 5
+    draw_lines(draw, src_lines, x + 10, cy, src_f, GREY, 23)
 
 
 def draw_grid(draw, top, bottom):
@@ -148,7 +177,7 @@ def draw_grid(draw, top, bottom):
         r, c = divmod(i, cols)
         x = MARGIN + c * (cell_w + gap)
         y = top + r * cell_h
-        draw_cell(draw, story, x, y, cell_w, cell_h - 14)
+        draw_cell(draw, story, x, y, cell_w, cell_h - 8)
         if c:  # hairline rule between columns
             draw.line([x - gap // 2, y + 6, x - gap // 2, y + cell_h - 20],
                       fill=HAIR, width=2)
